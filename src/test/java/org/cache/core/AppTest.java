@@ -40,8 +40,8 @@ public class AppTest {
     @Test
     public void cacheTest1() throws InterruptedException {
         CacheFactory<String,String> cacheFactory = new CacheFactory<>();
-
         ICleanCache<String,String> cacheCache = cacheFactory.basicCleanCache().setCacheTimeout(1000L).setCapacity(10).build();
+
         FillCache(cacheCache,10);
         Thread.sleep(500);
         FillCache(cacheCache,5);
