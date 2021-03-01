@@ -1,12 +1,17 @@
 package org.cache.core;
 
 import org.cache.config.CommonConfig;
+import org.cache.interfaces.EvictionCallback;
 import org.cache.interfaces.ICleanCache;
 import org.cache.interfaces.ReplenishCallback;
 import org.cache.model.CacheNode;
 import org.cache.model.DelayedCacheObject;
 
+import java.io.Serializable;
 import java.lang.ref.SoftReference;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.DelayQueue;
@@ -19,16 +24,23 @@ import static org.cache.config.CommonConfig.LOGGING_LEVEL;
  * @param <K> Cache Key Type
  * @param <V> Cache Value object
  */
-public class BasicCleanCache<K,V> implements ICleanCache<K,V> {
+public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,V> {
 
     private final static Logger LOGGER;
+
+    private long accessCount = 0;
+    private long replenishCount = 0;
+    private long lruTimeSpent = 0;
+    private long replenishmentTimeSpent = 0;
 
     static {
         LOGGER = Logger.getLogger(BasicCleanCache.class.getName());
         LOGGER.setLevel(LOGGING_LEVEL);
     }
     // Call back method and will be call while the cache replenish a value
-    private ReplenishCallback<K,V> callback = null;
+    private ReplenishCallback<K,V> replenishCallback = null;
+
+    private EvictionCallback<K,V> evictionCallback = null;
 
     // Max capacity of the cache
     private final int capacity;
@@ -51,20 +63,23 @@ public class BasicCleanCache<K,V> implements ICleanCache<K,V> {
 
     //Don't change use Factory method for cache instance
     private BasicCleanCache() {
-        this(CommonConfig.DEFAULT_CACHE_OBJECT_TIMEOUT,CommonConfig.DEFAULT_CACHE_SIZE,null);
+        this.capacity = 0;
+        this.cacheTimeout = 0L;
     }
 
     /**
      *
      * @param cacheTimeout cache time out time in millis
      * @param cacheSize Cache capacity
-     * @param callback Callback method
+     * @param replenishCallback Callback method
+     * @param evictionCallback Callback method
      */
-    protected BasicCleanCache(Long cacheTimeout, Integer cacheSize,ReplenishCallback<K,V> callback) {
+    protected BasicCleanCache(Long cacheTimeout, Integer cacheSize, ReplenishCallback<K,V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
         startCleanerThread();
         this.cacheTimeout = cacheTimeout;
         this.capacity = cacheSize;
-        this.callback = callback;
+        this.replenishCallback = replenishCallback;
+        this.evictionCallback = evictionCallback;
         this.clear();
     }
 
@@ -105,14 +120,25 @@ public class BasicCleanCache<K,V> implements ICleanCache<K,V> {
      */
     @Override
     public Optional<V> get(K key) {
+        Optional<V> value = Optional.empty();
+        this.increaseAccessCount();
         if(cache.containsKey(key)){
             CacheNode<K,V> cacheNode = cache.get(key);
             delete(cacheNode);
             setHead(cacheNode);
-            return Optional.ofNullable(cacheNode.getValue()).map(SoftReference::get);
+            value = Optional.ofNullable(cacheNode.getValue()).map(SoftReference::get);
         }else{
-            return Optional.empty();
+            if(this.replenishCallback != null){
+                this.replenishCount();
+                long start = System.currentTimeMillis();
+                //Get the value using the replenish callback and add add key,value to cache
+                value = this.replenishCallback.call(key);
+                long end = System.currentTimeMillis();
+                increaseReplenishmentTimeSpentBy(end-start);
+                value.ifPresent(v -> this.put(key, v));
+            }
         }
+        return value;
     }
 
     /**
@@ -152,8 +178,18 @@ public class BasicCleanCache<K,V> implements ICleanCache<K,V> {
         }
     }
 
+    @Override
+    public CacheStatistics getCacheStatistics() {
+        return new CacheStatistics().setTotalCacheSize(this.getCapacity())
+                .setMemorySize(this.getCapacity())
+                .setCurrentDiskSize(this.getCapacity())
+                .setHitRatio(this.calculateHitRatio())
+                .setMissRatio(this.calculateMissRatio())
+                .setAvgValueReplenishmentTimeSpent(this.calculateAvgReplenishmentTimeSpent());
+    }
+
     /**
-     * This mehtod will return the total capacity of the cache
+     * This method will return the total capacity of the cache
      * @return
      */
     public int getCapacity() {
@@ -169,7 +205,7 @@ public class BasicCleanCache<K,V> implements ICleanCache<K,V> {
                 try {
                     DelayedCacheObject<K,V> delayedCacheObject = cleaningUpQueue.take();
                     remove(delayedCacheObject.getKey());
-                    LOGGER.info(String.format("Expired Key = %s | Expired Value = %s",delayedCacheObject.getKey().toString(), delayedCacheObject.getReference().get().toString()));
+                    callEvictionPolicy(delayedCacheObject.getKey(), delayedCacheObject.getReference().get());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -229,19 +265,59 @@ public class BasicCleanCache<K,V> implements ICleanCache<K,V> {
         }else{
             CacheNode<K,V> newNode = new CacheNode<>(key, reference);
             if(cache.size()>=capacity){
+                //Remove last node if the cache is full
                 K removedKey = end.getKey();
                 V removedValue = end.getValue().get();
+                callEvictionPolicy(removedKey, removedValue);
                 cache.remove(end.getKey());
                 // remove last node
                 delete(end);
-                if(this.callback != null){
-                    this.callback.call(removedKey,removedValue);
-                }
             }
             setHead(newNode);
 
             cache.put(key, newNode);
         }
+    }
+
+    /**
+     * Eviction Policy for the removed object
+     * @param removedKey
+     * @param removedValue
+     */
+    private void callEvictionPolicy(K removedKey, V removedValue) {
+        if (evictionCallback != null) {
+            evictionCallback.call(removedKey, removedValue);
+        } else {
+            LOGGER.info(String.format("Expired Key = %s | Expired Value = %s", removedKey.toString(), Objects.requireNonNull(removedValue).toString()));
+        }
+    }
+
+    private void increaseReplenishmentTimeSpentBy(long elapsedTime) {
+        this.replenishmentTimeSpent+=elapsedTime;
+    }
+
+    private void replenishCount() {
+        this.replenishCount++;
+    }
+
+    private void increaseAccessCount() {
+        this.accessCount++;
+    }
+
+    private BigDecimal calculateAvgLruTimeSpent() {
+        return BigDecimal.valueOf(lruTimeSpent).divide(BigDecimal.valueOf(this.accessCount),CommonConfig.SCALE, CommonConfig.ROUNDING_MODE);
+    }
+
+    private BigDecimal calculateAvgReplenishmentTimeSpent() {
+        return BigDecimal.valueOf(replenishmentTimeSpent).divide(BigDecimal.valueOf(this.replenishCount),CommonConfig.SCALE,CommonConfig.ROUNDING_MODE);
+    }
+
+    private BigDecimal calculateMissRatio() {
+        return BigDecimal.valueOf(this.accessCount).divide(BigDecimal.valueOf(this.accessCount),CommonConfig.SCALE, CommonConfig.ROUNDING_MODE);
+    }
+
+    private BigDecimal calculateHitRatio() {
+        return BigDecimal.valueOf(this.accessCount - this.replenishCount).divide(BigDecimal.valueOf(this.accessCount),CommonConfig.SCALE, CommonConfig.ROUNDING_MODE);
     }
 
 }

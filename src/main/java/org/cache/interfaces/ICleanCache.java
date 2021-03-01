@@ -1,5 +1,8 @@
 package org.cache.interfaces;
 
+import org.cache.core.CacheStatistics;
+
+import java.io.Serializable;
 import java.util.Optional;
 
 /**
@@ -7,7 +10,7 @@ import java.util.Optional;
  * @param <K>
  * @param <V>
  */
-public interface ICleanCache<K,V> {
+public interface ICleanCache<K,V extends Serializable> {
 
     void clear();
 
@@ -20,4 +23,6 @@ public interface ICleanCache<K,V> {
     void put(K key, V value);
 
     Optional<V> remove(K key);
+
+    CacheStatistics getCacheStatistics();
 }

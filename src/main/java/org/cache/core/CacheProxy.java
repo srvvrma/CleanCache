@@ -1,9 +1,11 @@
 package org.cache.core;
 
 import org.cache.config.CommonConfig;
+import org.cache.interfaces.EvictionCallback;
 import org.cache.interfaces.ICleanCache;
 import org.cache.interfaces.ReplenishCallback;
 
+import java.io.Serializable;
 import java.util.Optional;
 
 /**
@@ -11,18 +13,20 @@ import java.util.Optional;
  * @param <K>
  * @param <V>
  */
-public abstract class CacheProxy<K,V> implements ICleanCache<K,V> {
+public abstract class CacheProxy<K,V extends Serializable> implements ICleanCache<K,V> {
 
-    protected ReplenishCallback<K,V> callback = null;
+    protected ReplenishCallback<K,V> replenishCallback = null;
+    protected EvictionCallback<K,V> evictionCallback = null;
 
     protected ICleanCache<K,V> cleanCache = null;
     protected final int capacity;
     protected final Long cacheTimeout;
 
-    protected CacheProxy(Long cacheTimeout, Integer cacheSize, ReplenishCallback<K,V> callback) {
+    protected CacheProxy(Long cacheTimeout, Integer cacheSize, ReplenishCallback<K,V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
         this.capacity = cacheSize;
         this.cacheTimeout = cacheTimeout;
-        this.callback = callback;
+        this.replenishCallback = replenishCallback;
+        this.evictionCallback = evictionCallback;
     }
 
 
@@ -56,5 +60,10 @@ public abstract class CacheProxy<K,V> implements ICleanCache<K,V> {
     @Override
     public final Optional<V> remove(K key) {
         return (cleanCache != null) ? cleanCache.remove(key) : Optional.empty();
+    }
+
+    @Override
+    public CacheStatistics getCacheStatistics() {
+        return (cleanCache != null) ? cleanCache.getCacheStatistics() : null;
     }
 }

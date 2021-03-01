@@ -1,22 +1,25 @@
 package org.cache.core;
 
+import org.cache.interfaces.EvictionCallback;
 import org.cache.interfaces.ReplenishCallback;
+
+import java.io.Serializable;
 
 /**
  * BasicClean Cache Proxy object
  * @param <K>
  * @param <V>
  */
-public class BasicCleanCacheProxy<K,V> extends CacheProxy<K,V> {
+public class BasicCleanCacheProxy<K,V extends Serializable> extends CacheProxy<K,V> {
 
-    public BasicCleanCacheProxy(Long cacheTimeout, Integer capacity, ReplenishCallback<K, V> callback) {
-        super(cacheTimeout,capacity,callback);
+    public BasicCleanCacheProxy(Long cacheTimeout, Integer capacity, ReplenishCallback<K, V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
+        super(cacheTimeout,capacity,replenishCallback,evictionCallback);
     }
 
     @Override
     public void put(K key, V value) {
         if(cleanCache == null){
-            cleanCache = new BasicCleanCache(this.cacheTimeout,this.capacity,this.callback);
+            cleanCache = new BasicCleanCache(this.cacheTimeout,this.capacity,this.replenishCallback,this.evictionCallback);
         }
         cleanCache.put(key,value);
     }

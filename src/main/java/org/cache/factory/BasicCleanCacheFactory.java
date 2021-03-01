@@ -2,14 +2,17 @@ package org.cache.factory;
 
 import org.cache.core.BasicCleanCacheProxy;
 import org.cache.core.CacheProxy;
+import org.cache.interfaces.EvictionCallback;
 import org.cache.interfaces.ReplenishCallback;
+
+import java.io.Serializable;
 
 /**
  * Factory for the BasicCleanCache proxy object
  * @param <K>
  * @param <V>
  */
-public class BasicCleanCacheFactory<K,V> extends CacheFactory<K,V>{
+public class BasicCleanCacheFactory<K,V extends Serializable > extends CacheFactory<K,V>{
 
     //Package private Don't change
     BasicCleanCacheFactory(){}
@@ -35,18 +38,30 @@ public class BasicCleanCacheFactory<K,V> extends CacheFactory<K,V>{
     }
 
     /**
-     * Set the callback method
-     * @param callback
+     * Set the replenish Callback method
+     * @param replenishCallback
      * @return
      */
-    public BasicCleanCacheFactory<K,V> setReplenishCallback(ReplenishCallback<K,V> callback) {
-        super.callback = callback;
+    public BasicCleanCacheFactory<K,V> setReplenishCallback(ReplenishCallback<K,V> replenishCallback) {
+        super.replenishCallback = replenishCallback;
+        return this;
+    }
+
+    /**
+     * Set the eviction Callback method
+     * @param evictionCallback
+     * @return
+     */
+    public BasicCleanCacheFactory<K,V> setEvictionCallback(EvictionCallback<K,V> evictionCallback) {
+        super.evictionCallback = evictionCallback;
         return this;
     }
 
     // Create an instance for the BasicCleanCache Proxy
     public CacheProxy<K,V> build(){
-        return new BasicCleanCacheProxy<>(super.cacheTimeout, super.capacity, super.callback);
+        return new BasicCleanCacheProxy<>(super.cacheTimeout, super.capacity, super.replenishCallback,this.evictionCallback);
     }
+
+
 
 }
