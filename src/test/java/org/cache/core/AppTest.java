@@ -2,15 +2,15 @@ package org.cache.core;
 
 
 import org.cache.config.CommonConfig;
-import org.cache.config.LogFormatter;
+import org.cache.config.CommonMessage;
 import org.cache.factory.CacheFactory;
 import org.cache.interfaces.ICleanCache;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 
 import java.util.Optional;
-import java.util.logging.ConsoleHandler;
-import java.util.logging.Formatter;
 import java.util.logging.Logger;
 
 
@@ -25,41 +25,86 @@ public class AppTest {
 
     static {
         LOGGER = Logger.getLogger(BasicCleanCache.class.getName());
-        LOGGER.setUseParentHandlers(false);
-        ConsoleHandler handler = new ConsoleHandler();
-
-        Formatter formatter = new LogFormatter();
-        handler.setFormatter(formatter);
-
-        LOGGER.addHandler(handler);
         LOGGER.setLevel(CommonConfig.LOGGING_LEVEL);
     }
 
+    @Rule
+    public ExpectedException expectedException = ExpectedException.none();
+
     /**
-     * Rigorous Test :-)
+     * Memory Threshold Size Test
      */
     @Test
-    public void cacheTimeOutTest() throws InterruptedException {
-        count = 0;
+    public void MemoryThresholdSizeTest() {
+        expectedException.expect(RuntimeException.class);
+        expectedException.expectMessage(CommonMessage.MEMORY_THRESHOLD_VALUE_IS_GREATER_THAN_TOTAL_CACHE_CAPACITY);
         CacheFactory<String,String> cacheFactory = new CacheFactory<>();
-        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(1000L).setCapacity(20).build();
-        fillCache(cleanCache,10);
-        Thread.sleep(500);
-        fillCache(cleanCache,5);
-        Thread.sleep(500);
-        Assert.assertEquals(5,cleanCache.size());
-        LOGGER.severe(String.format("Cache Size : %s",cleanCache.size()));
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(100000L).setMemoryThresholdSize(10000L).setCapacity(100L).build();
+
     }
 
     /**
-     * Rigorous Test :-)
+     * Memory Threshold Negative Validation Test
      */
     @Test
-    public void lruTest() throws InterruptedException {
+    public void MemoryThresholdNegativeValidationTest() {
+        expectedException.expect(RuntimeException.class);
+        expectedException.expectMessage(CommonMessage.MEMORY_THRESHOLD_VALUE_CAN_NOT_BE_NEGATIVE);
+        CacheFactory<String,String> cacheFactory = new CacheFactory<>();
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(100000L).setMemoryThresholdSize(-1L).setCapacity(100L).build();
+    }
+
+    /**
+     * Capacity Negative Validation Test
+     */
+
+    @Test
+    public void CapacityNegativeValidationTest() {
+        expectedException.expect(RuntimeException.class);
+        expectedException.expectMessage(CommonMessage.CAPACITY_CAN_NOT_BE_LESS_THAN_EQUAL_TO_ZERO);
+        CacheFactory<String,String> cacheFactory = new CacheFactory<>();
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(100000L).setMemoryThresholdSize(100L).setCapacity(-1L).build();
+    }
+
+    /**
+     * Cache Expiry Test :-)
+     */
+    @Test
+    public void cacheTimeOutTest1() throws InterruptedException {
         count = 0;
         CacheFactory<String,String> cacheFactory = new CacheFactory<>();
-        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(100000L).setCapacity(10).build();
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(1000L).setCapacity(20L).build();
         fillCache(cleanCache,10);
+        Thread.sleep(600);
+        fillCache(cleanCache,5);
+        Thread.sleep(500);
+        Assert.assertEquals(5,cleanCache.size());
+        LOGGER.severe(String.format("Cache Statistics : %s",cleanCache.getCacheStatistics()));
+    }
+
+    /**
+     * Cache Expiry Test :-)
+     */
+    @Test
+    public void cacheTimeOutTest2() throws InterruptedException {
+        count = 0;
+        CacheFactory<String,String> cacheFactory = new CacheFactory<>();
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(1L).setCapacity(1L).build();
+        fillCache(cleanCache,10000);
+        Thread.sleep(100);
+        Assert.assertEquals(1,cleanCache.size());
+        LOGGER.severe(String.format("Cache Statistics : %s",cleanCache.getCacheStatistics()));
+    }
+
+    /**
+     * LRU Test 1 :-)
+     */
+    @Test
+    public void lruTest1() throws InterruptedException {
+        count = 0;
+        CacheFactory<String,String> cacheFactory = new CacheFactory<>();
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(10000000L).setMemoryThresholdSize(100L).setCapacity(100L).build();
+        fillCache(cleanCache,100L);
         Optional<String> value = cleanCache.get("0");
         if(!value.isPresent()){
             throw new RuntimeException("Error in test case data.");
@@ -67,9 +112,41 @@ public class AppTest {
         fillCache(cleanCache,1);
         value = cleanCache.get("1");
         Assert.assertFalse(value.isPresent());
+        LOGGER.severe(cleanCache.getCacheStatistics().toString());
     }
 
-    private void fillCache(ICleanCache<String, String> cacheCache,int size) {
+    /**
+     * full disk LRU Test 1 :-)
+     */
+    @Test
+    public void fullDiskLruTest1() {
+        count = 0;
+        long inputElement = 10L;
+        CacheFactory<String,String> cacheFactory = new CacheFactory<>();
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(100000L).setMemoryThresholdSize(0L).setCapacity(10L).build();
+        fillCache(cleanCache,inputElement);
+        CacheStatistics cacheStatistics = cleanCache.getCacheStatistics();
+        Assert.assertEquals(inputElement,cacheStatistics.getCurrentDiskSize());
+        LOGGER.severe(cleanCache.getCacheStatistics().toString());
+    }
+
+    /**
+     * full disk LRU Test 2 :-)
+     */
+    @Test
+    public void fullDiskLruTest2() {
+        count = 0;
+        long inputElement = 10L;
+        CacheFactory<String,String> cacheFactory = new CacheFactory<>();
+        ICleanCache<String,String> cleanCache = cacheFactory.basicCleanCache().setCacheTimeout(100000L).setMemoryThresholdSize(1L).setCapacity(10L).build();
+        fillCache(cleanCache,inputElement);
+        cleanCache.get("0");
+        CacheStatistics cacheStatistics = cleanCache.getCacheStatistics();
+        Assert.assertEquals(inputElement-1,cacheStatistics.getCurrentDiskSize());
+        LOGGER.severe(cleanCache.getCacheStatistics().toString());
+    }
+
+    private void fillCache(ICleanCache<String, String> cacheCache,long size) {
         String key;
         String value;
         for (int i = 0; i<size ; i++){

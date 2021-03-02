@@ -12,7 +12,8 @@ import java.io.Serializable;
  */
 public class BasicCleanCacheProxy<K,V extends Serializable> extends CacheProxy<K,V> {
 
-    public BasicCleanCacheProxy(Long cacheTimeout, Integer capacity,Integer memoryThresholdSize, ReplenishCallback<K, V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
+    public BasicCleanCacheProxy(Long cacheTimeout, Long capacity,Long memoryThresholdSize, ReplenishCallback<K, V> replenishCallback,
+                                EvictionCallback<K,V> evictionCallback) {
         super(cacheTimeout,capacity,memoryThresholdSize,replenishCallback,evictionCallback);
     }
 

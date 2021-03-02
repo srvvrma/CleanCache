@@ -1,5 +1,6 @@
 package org.cache.factory;
 
+import org.cache.config.CommonMessage;
 import org.cache.core.BasicCleanCacheProxy;
 import org.cache.core.CacheProxy;
 import org.cache.interfaces.EvictionCallback;
@@ -22,8 +23,9 @@ public class BasicCleanCacheFactory<K,V extends Serializable > extends CacheFact
      * @param capacity
      * @return
      */
-    public BasicCleanCacheFactory<K,V> setCapacity(int capacity) {
+    public BasicCleanCacheFactory<K,V> setCapacity(Long capacity) {
         super.capacity = capacity;
+        if(super.memoryThresholdSize == null) super.memoryThresholdSize = capacity;
         return this;
     }
 
@@ -42,7 +44,7 @@ public class BasicCleanCacheFactory<K,V extends Serializable > extends CacheFact
      * @param memoryThresholdSize
      * @return
      */
-    public BasicCleanCacheFactory<K,V> setMemoryThresholdSize(Integer memoryThresholdSize) {
+    public BasicCleanCacheFactory<K,V> setMemoryThresholdSize(Long memoryThresholdSize) {
         super.memoryThresholdSize = memoryThresholdSize;
         return this;
     }
@@ -69,9 +71,15 @@ public class BasicCleanCacheFactory<K,V extends Serializable > extends CacheFact
 
     // Create an instance for the BasicCleanCache Proxy
     public CacheProxy<K,V> build(){
+        validateData();
         return new BasicCleanCacheProxy<>(super.cacheTimeout, super.capacity,super.memoryThresholdSize, super.replenishCallback,this.evictionCallback);
     }
 
+    private void validateData() {
+        if(this.memoryThresholdSize < 0) throw new RuntimeException(CommonMessage.MEMORY_THRESHOLD_VALUE_CAN_NOT_BE_NEGATIVE);
+        if(this.capacity <= 0) throw new RuntimeException(CommonMessage.CAPACITY_CAN_NOT_BE_LESS_THAN_EQUAL_TO_ZERO);
+        if(this.memoryThresholdSize > this.capacity) throw new RuntimeException(CommonMessage.MEMORY_THRESHOLD_VALUE_IS_GREATER_THAN_TOTAL_CACHE_CAPACITY);
+    }
 
 
 }

@@ -1,8 +1,10 @@
 package org.cache.model;
 
 import org.cache.config.CommonConfig;
+import org.cache.config.CommonUtils;
 import org.cache.config.LogFormatter;
 import org.cache.core.BasicCleanCache;
+import org.cache.core.CacheStats;
 
 import java.io.*;
 import java.lang.ref.SoftReference;
@@ -10,7 +12,7 @@ import java.util.logging.ConsoleHandler;
 import java.util.logging.Formatter;
 import java.util.logging.Logger;
 
-import static org.cache.config.CommonConfig.LOGGING_LEVEL;
+import static org.cache.config.CommonConfig.DISK_CACHE_PATH;
 
 /**
  * CaheNode class for storing the cached value in form doubly linked list
@@ -41,6 +43,13 @@ public class CacheNode<K,V extends Serializable> {
 
         LOGGER.addHandler(handler);
         LOGGER.setLevel(CommonConfig.LOGGING_LEVEL);
+
+        try {
+            CommonUtils.deleteDirectory(DISK_CACHE_PATH);
+            CommonUtils.createNewDirectory(DISK_CACHE_PATH);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public CacheNode(K key, SoftReference<V> value){
@@ -56,12 +65,13 @@ public class CacheNode<K,V extends Serializable> {
         return key;
     }
 
-    public SoftReference<V> getValue() {
+    public SoftReference<V> getValue(CacheStats cacheStats) {
         if(this.persistentState == PersistentState.DISK){
             try {
-                V cachedValue = this.getCacheNodeFromDisk();
+                V cachedValue = this.getCacheNodeFromDisk(cacheStats.getUuid());
                 value = new SoftReference<V>(cachedValue);
-                this.removeCacheNodeFromDisk();
+                this.removeCacheNodeFromDisk(cacheStats);
+                cacheStats.diskCachedNodes--;
                 this.persistentState = PersistentState.IN_MEMORY;
             } catch (IOException | ClassNotFoundException e) {
                 e.printStackTrace();
@@ -71,9 +81,10 @@ public class CacheNode<K,V extends Serializable> {
         return value;
     }
 
-    public void clearValue(){
+    public void clearValue(CacheStats cacheStats){
         if(this.persistentState == PersistentState.DISK){
-            this.removeCacheNodeFromDisk();
+            this.removeCacheNodeFromDisk(cacheStats);
+            cacheStats.diskCachedNodes--;
         }else{
             value.clear();
         }
@@ -95,27 +106,27 @@ public class CacheNode<K,V extends Serializable> {
         this.next = next;
     }
 
-    public void flushToDisk(){
+    public void flushToDisk(CacheStats cacheStats){
         //No need to persist if node already in disk
         if(this.persistentState == PersistentState.DISK) return;
 
         try {
-            this.flushCacheNodeToDisk();
+            this.flushCacheNodeToDisk(cacheStats.getUuid());
             value = null;
+            cacheStats.diskCachedNodes++;
             this.persistentState = PersistentState.DISK;
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
+    public PersistentState getPersistentState() {
+        return persistentState;
+    }
 
-    private void flushCacheNodeToDisk() throws IOException {
-        File newDir = new File(key.getClass().getCanonicalName());
-        if(!newDir.exists()){
-            newDir.mkdir();
-        }
-
-        FileOutputStream f = new FileOutputStream(new File(key.getClass().getCanonicalName()+"/" + key.hashCode()));
+    private void flushCacheNodeToDisk(String uniqueDirName) throws IOException {
+        CommonUtils.createNewDirectory(DISK_CACHE_PATH + "/" + uniqueDirName); //TODO: Need to fix this
+        FileOutputStream f = new FileOutputStream(getFilePath(uniqueDirName));
         ObjectOutputStream o = new ObjectOutputStream(f);
 
         // Write objects to file
@@ -124,9 +135,13 @@ public class CacheNode<K,V extends Serializable> {
         f.close();
     }
 
-    public V getCacheNodeFromDisk() throws IOException, ClassNotFoundException {
+    private String getFilePath(String uniqueDirName) {
+        return CommonConfig.DISK_CACHE_PATH +  "/" + uniqueDirName + "/" + key.hashCode();
+    }
 
-        FileInputStream fi = new FileInputStream(new File(key.getClass().getCanonicalName()+"/"  + key.hashCode()));
+    public V getCacheNodeFromDisk(String uniqueDirName) throws IOException, ClassNotFoundException {
+
+        FileInputStream fi = new FileInputStream(getFilePath(uniqueDirName));
         ObjectInputStream oi = new ObjectInputStream(fi);
 
         // Read objects
@@ -137,9 +152,9 @@ public class CacheNode<K,V extends Serializable> {
 
     }
 
-    public void removeCacheNodeFromDisk() {
+    public void removeCacheNodeFromDisk(CacheStats cacheStats) {
 
-        File file = new File(key.getClass().getCanonicalName()+"/"  + key.hashCode());
+        File file = new File(getFilePath(cacheStats.getUuid()));
         if (file.delete()) {
             LOGGER.info(String.format("cache node with key %s removed from disk",key.toString()));
         } else {

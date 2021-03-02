@@ -1,21 +1,25 @@
 package org.cache.core;
 
 import org.cache.config.CommonConfig;
+import org.cache.config.CommonUtils;
 import org.cache.interfaces.EvictionCallback;
 import org.cache.interfaces.ICleanCache;
 import org.cache.interfaces.ReplenishCallback;
 import org.cache.model.CacheNode;
 import org.cache.model.DelayedCacheObject;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.lang.ref.SoftReference;
 import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.DelayQueue;
 import java.util.logging.Logger;
 
+import static org.cache.config.CommonConfig.DISK_CACHE_PATH;
 import static org.cache.config.CommonConfig.LOGGING_LEVEL;
 
 /**
@@ -23,12 +27,8 @@ import static org.cache.config.CommonConfig.LOGGING_LEVEL;
  * @param <K> Cache Key Type
  * @param <V> Cache Value object
  */
-public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,V> {
+public class BasicCleanCache<K,V extends Serializable> extends CacheStats implements ICleanCache<K,V> {
 
-    private long accessCount = 0;
-    private long replenishCount = 0;
-    private long lruTimeSpent = 0;
-    private long replenishmentTimeSpent = 0;
 
     private final static Logger LOGGER;
     static {
@@ -40,10 +40,6 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
 
     private EvictionCallback<K,V> evictionCallback = null;
 
-    // Max capacity of the cache
-    private final int capacity;
-
-    private final int memoryThresholdSize;
 
     //Cache object expire time
     private final Long cacheTimeout;
@@ -60,14 +56,13 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
     //least recent element of the cache
     private CacheNode<K,V> end;
 
-    private CacheNode<K,V> diskCacheNode;
+    private CacheNode<K,V> nextDiskCacheNode;
 
 
     //Don't change use Factory method for cache instance
     private BasicCleanCache() {
-        this.capacity = 0;
+        super(0L, 0L);
         this.cacheTimeout = 0L;
-        this.memoryThresholdSize = 0;
     }
 
     /**
@@ -77,14 +72,13 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
      * @param replenishCallback Callback method
      * @param evictionCallback Callback method
      */
-    protected BasicCleanCache(Long cacheTimeout, Integer cacheSize,Integer memoryThresholdSize,
+    protected BasicCleanCache(Long cacheTimeout, Long cacheSize,Long memoryThresholdSize,
                               ReplenishCallback<K,V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
+        super(cacheSize, memoryThresholdSize);
         startCleanerThread();
         this.cacheTimeout = cacheTimeout;
-        this.capacity = cacheSize;
         this.replenishCallback = replenishCallback;
         this.evictionCallback = evictionCallback;
-        this.memoryThresholdSize = memoryThresholdSize;
         this.clear();
     }
 
@@ -129,39 +123,38 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
         this.increaseAccessCount();
         if(cache.containsKey(key)){
             CacheNode<K,V> cacheNode = cache.get(key);
-            if(cacheNode == this.diskCacheNode){
-                this.diskCacheNode = this.diskCacheNode.getPrev();
-                pushCacheToDisk();
+            long start = getCurrentTimeMillis();
+            if(cacheNode == this.nextDiskCacheNode){
+                this.nextDiskCacheNode = this.nextDiskCacheNode.getPrev();
             }
+            pushCacheToDisk();
             delete(cacheNode);
             setHead(cacheNode);
-            value = Optional.ofNullable(cacheNode.getValue()).map(SoftReference::get);
+            value = Optional.ofNullable(cacheNode.getValue(this)).map(SoftReference::get);
+            long end = getCurrentTimeMillis();
+            increaseLruTimeSpentBy(end-start);
         }else{
             if(this.replenishCallback != null){
                 this.replenishCount();
-                long start = System.currentTimeMillis();
-                //Get the value using the replenish callback and add add key,value to cache
-                value = this.replenishCallback.call(key);
-                long end = System.currentTimeMillis();
-                increaseReplenishmentTimeSpentBy(end-start);
+                value = callReplenishPolicy(key);
                 value.ifPresent(v -> this.put(key, v));
             }
         }
         return value;
     }
 
-    private void pushCacheToDisk() {
-        if(cache.size() > this.memoryThresholdSize) {
-            if (diskCacheNode == null) {
-                diskCacheNode = end;
-            }
-            diskCacheNode.flushToDisk();
-            diskCacheNode = diskCacheNode.getPrev();
-        }
+    private Optional<V> callReplenishPolicy(K key) {
+        Optional<V> value;
+        long start = getCurrentTimeMillis();
+        //Get the value using the replenish callback and add add key,value to cache
+        value = this.replenishCallback.call(key);
+        long end = getCurrentTimeMillis();
+        increaseReplenishmentTimeSpentBy(end-start);
+        return value;
     }
 
-    private void popCacheToMemory() {
-
+    private long getCurrentTimeMillis() {
+        return System.currentTimeMillis();
     }
 
     /**
@@ -175,7 +168,7 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
 
         if(value != null){
             SoftReference<V> reference = new SoftReference<>(value);
-            long expiryTime = System.currentTimeMillis() + this.cacheTimeout;
+            long expiryTime = getCurrentTimeMillis() + this.cacheTimeout;
             set(key, reference);
             cleaningUpQueue.put(new DelayedCacheObject<>(key, expiryTime));
         }
@@ -195,13 +188,13 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
         }
         CacheNode<K,V> removedNode =  cache.remove(key);
         if(removedNode != null){
-            if(removedNode == this.diskCacheNode){
-                this.diskCacheNode = this.diskCacheNode.getPrev();
+            if(removedNode == this.nextDiskCacheNode){
+                this.nextDiskCacheNode = this.nextDiskCacheNode.getPrev();
             }
             delete(removedNode);
-            removedNode.clearValue();
+            removedNode.clearValue(this);
             popCacheToMemory();
-            return Optional.ofNullable(removedNode.getValue()).map(SoftReference::get);
+            return Optional.ofNullable(removedNode.getValue(this)).map(SoftReference::get);
         }else{
             return empty;
         }
@@ -210,19 +203,21 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
     @Override
     public CacheStatistics getCacheStatistics() {
         return new CacheStatistics().setTotalCacheSize(this.getCapacity())
-                .setMemorySize(this.getCapacity())
-                .setCurrentDiskSize(this.getCapacity())
+                .setMemorySize(this.size() - this.diskCachedNodes)
+                .setCurrentDiskSize(this.diskCachedNodes)
+                .setTotalAccessCount(this.accessCount)
                 .setHitRatio(this.calculateHitRatio())
                 .setMissRatio(this.calculateMissRatio())
-                .setAvgValueReplenishmentTimeSpent(this.calculateAvgReplenishmentTimeSpent());
+                .setAvgValueReplenishmentTimeSpent(this.calculateAvgReplenishmentTimeSpent())
+                .setAvgLruOptimizationTimeSpent(this.calculateAvgLruOptimizationTimeSpent());
     }
 
     /**
      * This method will return the total capacity of the cache
      * @return
      */
-    public int getCapacity() {
-        return capacity;
+    public long getCapacity() {
+        return this.capacity;
     }
 
     /**
@@ -233,7 +228,7 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     DelayedCacheObject<K,V> delayedCacheObject = cleaningUpQueue.take();
-                    callEvictionPolicy(delayedCacheObject.getKey(), cache.get(delayedCacheObject.getKey()).getValue().get());
+                    callEvictionPolicy(delayedCacheObject.getKey(), cache.get(delayedCacheObject.getKey()).getValue(this).get());
                     remove(delayedCacheObject.getKey());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -243,6 +238,7 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
         cleanerThread.setDaemon(true);
         cleanerThread.start();
     }
+
 
 
     /**
@@ -296,11 +292,13 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
             if(cache.size()>=capacity){
                 //Remove last node if the cache is full
                 K removedKey = end.getKey();
-                V removedValue = end.getValue().get();
+                V removedValue = end.getValue(this).get();
                 callEvictionPolicy(removedKey, removedValue);
-                cache.remove(end.getKey());
-                // remove last node
-                delete(end);
+                if(end != null) {
+                    cache.remove(end.getKey());
+                    // remove last node
+                    delete(end);
+                }
             }
             setHead(newNode);
 
@@ -323,6 +321,10 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
 
     private void increaseReplenishmentTimeSpentBy(long elapsedTime) {
         this.replenishmentTimeSpent+=elapsedTime;
+    }
+
+    private void increaseLruTimeSpentBy(long elapsedTime) {
+        this.lruTimeSpent+=elapsedTime;
     }
 
     private void replenishCount() {
@@ -349,6 +351,14 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
         }
     }
 
+    private BigDecimal calculateAvgLruOptimizationTimeSpent() {
+        if(this.replenishCount != 0) {
+            return BigDecimal.valueOf(lruTimeSpent).divide(BigDecimal.valueOf(this.accessCount), CommonConfig.SCALE, CommonConfig.ROUNDING_MODE);
+        }else{
+            return BigDecimal.ZERO;
+        }
+    }
+
     private BigDecimal calculateMissRatio() {
         if(this.accessCount != 0 ) {
             return BigDecimal.valueOf(this.accessCount).divide(BigDecimal.valueOf(this.accessCount), CommonConfig.SCALE, CommonConfig.ROUNDING_MODE);
@@ -363,6 +373,24 @@ public class BasicCleanCache<K,V extends Serializable> implements ICleanCache<K,
         }else{
             return BigDecimal.ZERO;
         }
+    }
+
+    private void pushCacheToDisk() {
+        if(cache.size() > this.memoryThresholdSize) {
+            if(this.memoryThresholdSize == 0){
+                nextDiskCacheNode = head;
+            }else{
+                if (nextDiskCacheNode == null) {
+                    nextDiskCacheNode = end;
+                }
+            }
+            nextDiskCacheNode.flushToDisk(this);
+            nextDiskCacheNode = nextDiskCacheNode.getPrev();
+        }
+    }
+
+    private void popCacheToMemory() {
+
     }
 
 }

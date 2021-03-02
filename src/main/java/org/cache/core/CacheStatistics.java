@@ -1,14 +1,15 @@
 package org.cache.core;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public final class CacheStatistics {
 
-    private int totalCacheSize;
+    private long totalCacheSize;
 
-    private int memorySize;
+    private long memorySize;
 
-    private int currentDiskSize;
+    private long currentDiskSize;
 
     private long totalAccessCount;
 
@@ -20,15 +21,15 @@ public final class CacheStatistics {
 
     private BigDecimal avgValueReplenishmentTimeSpent;
 
-    public int getTotalCacheSize() {
+    public long getTotalCacheSize() {
         return totalCacheSize;
     }
 
-    public int getMemorySize() {
+    public long getMemorySize() {
         return memorySize;
     }
 
-    public int getCurrentDiskSize() {
+    public long getCurrentDiskSize() {
         return currentDiskSize;
     }
 
@@ -52,17 +53,17 @@ public final class CacheStatistics {
         return avgValueReplenishmentTimeSpent;
     }
 
-    protected CacheStatistics setTotalCacheSize(int totalCacheSize) {
+    protected CacheStatistics setTotalCacheSize(long totalCacheSize) {
         this.totalCacheSize = totalCacheSize;
         return this;
     }
 
-    protected CacheStatistics setMemorySize(int memorySize) {
+    protected CacheStatistics setMemorySize(long memorySize) {
         this.memorySize = memorySize;
         return this;
     }
 
-    protected CacheStatistics setCurrentDiskSize(int currentDiskSize) {
+    protected CacheStatistics setCurrentDiskSize(long currentDiskSize) {
         this.currentDiskSize = currentDiskSize;
         return this;
     }
@@ -90,5 +91,19 @@ public final class CacheStatistics {
     protected CacheStatistics setAvgValueReplenishmentTimeSpent(BigDecimal avgValueReplenishmentTimeSpent) {
         this.avgValueReplenishmentTimeSpent = avgValueReplenishmentTimeSpent;
         return this;
+    }
+
+    @Override
+    public String toString() {
+        return "CacheStatistics{" +
+                "totalCacheSize=" + totalCacheSize +
+                ", memorySize=" + memorySize +
+                ", currentDiskSize=" + currentDiskSize +
+                ", totalAccessCount=" + totalAccessCount +
+                ", hitRatio=" + hitRatio +
+                ", missRatio=" + missRatio +
+                ", avgLruOptimizationTimeSpent=" + avgLruOptimizationTimeSpent +
+                ", avgValueReplenishmentTimeSpent=" + avgValueReplenishmentTimeSpent +
+                '}';
     }
 }

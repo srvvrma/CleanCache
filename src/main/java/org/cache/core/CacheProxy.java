@@ -19,11 +19,11 @@ public abstract class CacheProxy<K,V extends Serializable> implements ICleanCach
     protected EvictionCallback<K,V> evictionCallback = null;
 
     protected ICleanCache<K,V> cleanCache = null;
-    protected final int capacity;
+    protected final Long capacity;
     protected final Long cacheTimeout;
-    protected Integer memoryThresholdSize;
+    protected Long memoryThresholdSize;
 
-    protected CacheProxy(Long cacheTimeout, Integer cacheSize,Integer memoryThresholdSize, ReplenishCallback<K,V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
+    protected CacheProxy(Long cacheTimeout, Long cacheSize,Long memoryThresholdSize, ReplenishCallback<K,V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
         this.capacity = cacheSize;
         this.cacheTimeout = cacheTimeout;
         this.replenishCallback = replenishCallback;

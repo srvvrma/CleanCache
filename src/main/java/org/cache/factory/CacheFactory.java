@@ -15,9 +15,9 @@ public class CacheFactory<K,V extends Serializable> {
 
     protected ReplenishCallback<K,V> replenishCallback = null;
     protected EvictionCallback<K,V> evictionCallback = null;
-    protected Integer capacity = CommonConfig.DEFAULT_CACHE_SIZE;
+    protected Long capacity = CommonConfig.DEFAULT_CACHE_SIZE;
     protected Long cacheTimeout = CommonConfig.DEFAULT_CACHE_OBJECT_TIMEOUT;
-    protected Integer memoryThresholdSize = null;
+    protected Long memoryThresholdSize = null;
 
     public BasicCleanCacheFactory<K,V> basicCleanCache(){
         return new BasicCleanCacheFactory<>();
