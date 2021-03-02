@@ -38,6 +38,16 @@ public class BasicCleanCacheFactory<K,V extends Serializable > extends CacheFact
     }
 
     /**
+     * Set the memory Threshold Size time for the cached object
+     * @param memoryThresholdSize
+     * @return
+     */
+    public BasicCleanCacheFactory<K,V> setMemoryThresholdSize(Integer memoryThresholdSize) {
+        super.memoryThresholdSize = memoryThresholdSize;
+        return this;
+    }
+
+    /**
      * Set the replenish Callback method
      * @param replenishCallback
      * @return
@@ -59,7 +69,7 @@ public class BasicCleanCacheFactory<K,V extends Serializable > extends CacheFact
 
     // Create an instance for the BasicCleanCache Proxy
     public CacheProxy<K,V> build(){
-        return new BasicCleanCacheProxy<>(super.cacheTimeout, super.capacity, super.replenishCallback,this.evictionCallback);
+        return new BasicCleanCacheProxy<>(super.cacheTimeout, super.capacity,super.memoryThresholdSize, super.replenishCallback,this.evictionCallback);
     }
 
 

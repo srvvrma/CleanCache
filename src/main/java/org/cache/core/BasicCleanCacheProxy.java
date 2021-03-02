@@ -12,14 +12,14 @@ import java.io.Serializable;
  */
 public class BasicCleanCacheProxy<K,V extends Serializable> extends CacheProxy<K,V> {
 
-    public BasicCleanCacheProxy(Long cacheTimeout, Integer capacity, ReplenishCallback<K, V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
-        super(cacheTimeout,capacity,replenishCallback,evictionCallback);
+    public BasicCleanCacheProxy(Long cacheTimeout, Integer capacity,Integer memoryThresholdSize, ReplenishCallback<K, V> replenishCallback, EvictionCallback<K,V> evictionCallback) {
+        super(cacheTimeout,capacity,memoryThresholdSize,replenishCallback,evictionCallback);
     }
 
     @Override
     public void put(K key, V value) {
         if(cleanCache == null){
-            cleanCache = new BasicCleanCache(this.cacheTimeout,this.capacity,this.replenishCallback,this.evictionCallback);
+            cleanCache = new BasicCleanCache(this.cacheTimeout,this.capacity,this.memoryThresholdSize,this.replenishCallback,this.evictionCallback);
         }
         cleanCache.put(key,value);
     }

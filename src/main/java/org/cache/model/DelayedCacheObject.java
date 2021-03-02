@@ -12,12 +12,10 @@ import java.util.concurrent.TimeUnit;
 public class DelayedCacheObject<K,V> implements Delayed {
 
     private final K key;
-    private final SoftReference<V> reference;
     private final long expiryTime;
 
-    public DelayedCacheObject(K key, SoftReference<V> reference, long expiryTime) {
+    public DelayedCacheObject(K key, long expiryTime) {
         this.key = key;
-        this.reference = reference;
         this.expiryTime = expiryTime;
     }
 
@@ -30,9 +28,6 @@ public class DelayedCacheObject<K,V> implements Delayed {
         return key;
     }
 
-    public SoftReference<V> getReference() {
-        return reference;
-    }
 
 
     @Override
